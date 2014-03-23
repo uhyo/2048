@@ -72,7 +72,17 @@ GameManager.prototype.addStartTiles = function () {
 // Adds a tile in a random position
 GameManager.prototype.addRandomTile = function () {
   if (this.grid.cellsAvailable()) {
-    var value = Math.random() < 0.9 ? 2 : 4;
+    var r=Math.random();
+    var value;
+    if(r<0.7){
+      value=[2];
+    }else if(r<0.82){
+      value=[4];
+    }else if(r<0.94){
+      value=[2,4];
+    }else{
+      value=[2,8];
+    }
     var tile = new Tile(this.grid.randomAvailableCell(), value);
 
     this.grid.insertTile(tile);
@@ -125,9 +135,13 @@ GameManager.prototype.prepareTiles = function () {
 
 // Move a tile and its representation
 GameManager.prototype.moveTile = function (tile, cell) {
-  this.grid.cells[tile.x][tile.y] = null;
-  this.grid.cells[cell.x][cell.y] = tile;
-  tile.updatePosition(cell);
+  try{
+    this.grid.cells[tile.x][tile.y] = null;
+    this.grid.cells[cell.x][cell.y] = tile;
+    tile.updatePosition(cell);
+  }catch(e){
+    debugger;
+  }
 };
 
 // Move tiles on the grid in the specified direction
@@ -147,41 +161,215 @@ GameManager.prototype.move = function (direction) {
   this.prepareTiles();
 
   // Traverse the grid in the right direction and move tiles
-  traversals.x.forEach(function (x) {
+  if(vector.x){
     traversals.y.forEach(function (y) {
-      cell = { x: x, y: y };
-      tile = self.grid.cellContent(cell);
+      //全パターンを列挙
+      var pats=allPatterns(vector,{x:0,y:y});
+      var paos=pats.map(function(pattern){return pattern.concat([]);});
+      pats=processPatterns(pats,traversals.x,vector.x);
+      setTiles(paos,pats,vector,traversals.x,traversals.x.map(function(idx){return {x:idx,y:y}}));
+    });
+  }else{
+    traversals.x.forEach(function (x) {
+      var pats=allPatterns(vector,{x:x,y:0});
+      var paos=pats.map(function(pattern){return pattern.concat([]);});
+      pats=processPatterns(pats,traversals.y,vector.y);
+      setTiles(paos,pats,vector,traversals.y,traversals.y.map(function(idx){return {x:x,y:idx}}));
+    });
+  }
+  function allPatterns(vector,cell){
+    vector={
+      x:Math.abs(vector.x),
+      y:Math.abs(vector.y),
+    };
+    if(!self.grid.withinBounds(cell)){
+      return [[]];
+    }
+    var tile=self.grid.cellContent(cell);
+    var value=tile ? tile.value : [null];
+    var result=[];
+    //return value.map(function(v){
+    value.forEach(function(v){
+      result=result.concat(allPatterns(vector,{x:cell.x+vector.x,y:cell.y+vector.y}).map(function(pattern){
+        return [v].concat(pattern);
+      }));
+    });
+    return result;
+  }
+  function processPatterns(pats,traversal,vector){
+    var moveds=pats.map(function(pattern){
+      return processPattern(traversal,vector,pattern);
+    });
+    if(moveds.some(function(arr){return arr[1]})){
+      //mergedなものがあったら動かなかったものは除去
+      pats=pats.filter(function(pattern,i){
+        return !!moveds[i][1];
+      });
+    }
+    moved = moved || moveds.some(function(arr){return arr[0]||arr[1]});
+    return pats;
+  }
+  function processPattern(traversal,vector,pattern){
+    var merged=[];
+    var moved= traversal.reduce(function(prev,idx){
+      return processTile(pattern,merged,vector,idx) || prev;
+    },false);
+    return [moved,merged.some(function(x){return x})];
+  }
+  function processTile(pattern,merged,vector,idx){
+    var moved=false;
+    //vector: 1d
+    var value=pattern[idx];
+    var farthest,nextpos;
+    if(value!=null){
+      nextpos=idx;
+      do{
+        farthest=nextpos;
+        nextpos=farthest+vector;
+      }while(pattern[nextpos]===null);
+      var next=pattern[nextpos];
+      if(next!=null && value===next && !merged[nextpos]){
+        //merge
+        pattern[nextpos]=value*2;
+        merged[nextpos]=true
+        pattern[idx]=null;
+        merged[idx]=false;
+        self.score+=value*2;
+      }else if(idx!=farthest){
+        //タイル移動
+        pattern[farthest]=value;
+        merged[farthest]=merged[idx];
+        pattern[idx]=null;
+        merged[idx]=false;
+        moved=true;
+      }
+    }
+    return moved;
+    /*
+    cell = { x: x, y: y };
+    tile = self.grid.cellContent(cell);
 
-      if (tile) {
-        var positions = self.findFarthestPosition(cell, vector);
-        var next      = self.grid.cellContent(positions.next);
+    if (tile) {
+      var positions = self.findFarthestPosition(cell, vector);
+      var next      = self.grid.cellContent(positions.next);
 
-        // Only one merger per row traversal?
-        if (next && next.value === tile.value && !next.mergedFrom) {
-          var merged = new Tile(positions.next, tile.value * 2);
-          merged.mergedFrom = [tile, next];
+      // Only one merger per row traversal?
+      if (next && next.value[0] === tile.value[0] && !next.mergedFrom) {
+        var merged = new Tile(positions.next, [tile.value[0] * 2]);
+        merged.mergedFrom = [tile, next];
 
+        self.grid.insertTile(merged);
+        self.grid.removeTile(tile);
+
+        // Converge the two tiles' positions
+        tile.updatePosition(positions.next);
+
+        // Update the score
+        self.score += merged.value[0];
+
+        // The mighty 2048 tile
+        if (merged.value === 2048) self.won = true;
+      } else {
+        self.moveTile(tile, positions.farthest);
+      }
+
+      if (!self.positionsEqual(cell, tile)) {
+        moved = true; // The tile moved from its original cell!
+      }
+    }*/
+  }
+  function setTiles(paos,pats,vector,traversal,cells){
+    console.log(JSON.stringify(paos),JSON.stringify(pats));
+    var bef=[],aft=[];
+    traversal.forEach(function(idx){
+      bef.push(collect(paos,idx));
+      aft.push(collect(pats,idx));
+    });
+    //how many times merged
+    var diff=actualLength(bef)-actualLength(aft);
+    var i=0,j=0;    //i:aft,j:bef
+    while(bef[j] && bef[j].length===0)j++;
+    while(i<self.size){
+      var cell=cells[j];
+      var acell=cells[i];
+      var bval=bef[j];
+      var aval=aft[i];
+      if(aval.length===0){
+        //もうない
+        break;
+      }
+      if(!eq(bval,aval)){
+        if(diff>0){
+          //これがマージされたことにする
+          console.log("merge");
+          var merged=new Tile(acell,aval);
+          var from1=self.grid.cellContent(cell);
+          bef[j]=[];
+          nextj();  //acell
+          bef[j]=[];
+          var from2=self.grid.cellContent(cells[j]);
+          diff--;
+          merged.mergedFrom=[from1,from2];
+          self.grid.removeTile(from1); //?
+          self.grid.removeTile(from2);
           self.grid.insertTile(merged);
-          self.grid.removeTile(tile);
-
-          // Converge the two tiles' positions
-          tile.updatePosition(positions.next);
-
-          // Update the score
-          self.score += merged.value;
-
-          // The mighty 2048 tile
-          if (merged.value === 2048) self.won = true;
-        } else {
-          self.moveTile(tile, positions.farthest);
+          from1.updatePosition(acell);
+          from2.updatePosition(acell);
+        }else{
+          //動いた?
+          var tile=self.grid.cellContent(cell);
+          self.moveTile(tile,acell);
+          tile.value=aval;
         }
+      }else if(i!==j){
+        //変わってないけど動いた
+        //debugger;
+        var tile=self.grid.cellContent(cell);
+        self.moveTile(tile,acell);
+      }
+      i++;
+      nextj();
+    }
 
-        if (!self.positionsEqual(cell, tile)) {
-          moved = true; // The tile moved from its original cell!
+    function nextj(){
+      do{
+        j++;
+      }while(bef[j] && bef[j].length===0);
+    }
+
+    
+    //端によっているので
+    function actualLength(arr){
+      var result=0;
+      for(var i=0;i<arr.length;i++){
+        if(arr[i].length>0){
+          result++;
         }
       }
-    });
-  });
+      return result;
+    }
+    //収集する
+    function collect(pats,idx){
+      //重複なし
+      var result=[];
+      var table={};
+      pats.forEach(function(pattern){
+        if(pattern[idx]==null)return;
+        if(table[pattern[idx]]!==true){
+          result.push(pattern[idx]);
+          table[pattern[idx]]=true;
+        }
+      });
+      return result.sort(function(a,b){return a-b});
+    }
+    //arrayが同じかどうか
+    function eq(arr1,arr2){
+      if(arr1.length!==arr2.length)return false;
+      return arr1.every(function(val,i){
+        return val===arr2[i];
+      });
+    }
+  }
 
   if (moved) {
     this.addRandomTile();
