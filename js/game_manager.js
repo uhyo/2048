@@ -315,6 +315,10 @@ GameManager.prototype.move = function (direction) {
           self.grid.insertTile(merged);
           from1.updatePosition(acell);
           from2.updatePosition(acell);
+          //完了
+          if(merged.value.indexOf(2048)>=0){
+            self.won=true;
+          }
         }else{
           //動いた?
           var tile=self.grid.cellContent(cell);
@@ -448,8 +452,13 @@ GameManager.prototype.tileMatchesAvailable = function () {
 
           var other  = self.grid.cellContent(cell);
 
-          if (other && other.value === tile.value) {
+          /*if (other && other.value === tile.value) {
             return true; // These two tiles can be merged
+          }*/
+          if(other && tile.value.some(function(v){
+            return other.value.indexOf(v)>=0;
+          })){
+            return true;
           }
         }
       }
@@ -462,3 +471,4 @@ GameManager.prototype.tileMatchesAvailable = function () {
 GameManager.prototype.positionsEqual = function (first, second) {
   return first.x === second.x && first.y === second.y;
 };
+
