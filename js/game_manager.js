@@ -15,6 +15,10 @@ function GameManager(size, InputManager, Actuator, StorageManager) {
 
 // Restart the game
 GameManager.prototype.restart = function () {
+  // Confirm with user
+  if (!confirm('Are you sure you want to reset the game? Current game board will be discarded.')) {
+    return;
+  }
   this.storageManager.clearGameState();
   this.actuator.continue(); // Clear the game won/lost message
   this.setup();
